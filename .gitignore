@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AWS local credentials and budgets configuration
+/aws-budget/
+/aws_setup_guide.md
