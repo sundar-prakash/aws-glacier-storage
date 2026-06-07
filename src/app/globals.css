@@ -1,30 +1,38 @@
 @import "tailwindcss";
 
 :root {
-  --bg-main: #07080f;
-  --bg-sidebar: #0c0e17;
-  --bg-card: #121522;
-  --border-main: rgba(255, 255, 255, 0.06);
+  --bg-main: #131314;
+  --bg-sidebar: #131314;
+  --bg-card: #1e1f20;
+  --border-main: #444746;
   --border-color: var(--border-main);
-  --text-main: #f3f4f6;
-  --text-sub: #9ca3af;
-  --text-muted: #6b7280;
-  --bg-hover: rgba(255, 255, 255, 0.04);
+  --text-main: #e3e3e3;
+  --text-sub: #c4c7c5;
+  --text-muted: #8e918f;
+  --bg-hover: #2d2f31;
+  
+  --google-blue: #a8c7fa;
+  --google-blue-bg: #004a77;
+  --google-blue-text: #c2e7ff;
   
   --background: var(--bg-main);
   --foreground: var(--text-main);
 }
 
 html.light {
-  --bg-main: #f8fafc;
-  --bg-sidebar: #ffffff;
+  --bg-main: #f8f9fa;
+  --bg-sidebar: #f8f9fa;
   --bg-card: #ffffff;
-  --border-main: rgba(0, 0, 0, 0.08);
-  --border-color: var(--border-main);
-  --text-main: #0f172a;
-  --text-sub: #475569;
-  --text-muted: #64748b;
-  --bg-hover: rgba(0, 0, 0, 0.03);
+  --border-main: #e0e0e0;
+  --border-color: #c4c7c5;
+  --text-main: #1f1f1f;
+  --text-sub: #444746;
+  --text-muted: #747775;
+  --bg-hover: #f1f3f4;
+  
+  --google-blue: #1a73e8;
+  --google-blue-bg: #c2e7ff;
+  --google-blue-text: #001d35;
   
   --background: var(--bg-main);
   --foreground: var(--text-main);
@@ -50,7 +58,7 @@ body {
   background-color: var(--bg-main);
   color: var(--text-main);
   font-family: Arial, Helvetica, sans-serif;
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 button,
@@ -65,4 +73,15 @@ button:disabled,
 [role="button"]:disabled,
 button[disabled] {
   cursor: not-allowed;
+}
+
+/* Custom styles for Google-like UI */
+.active-pill-bg {
+  background-color: var(--google-blue-bg);
+  color: var(--google-blue-text);
+  font-weight: 500;
+}
+
+.google-blue-icon {
+  color: var(--google-blue);
 }

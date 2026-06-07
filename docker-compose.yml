@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  glacier-drive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: glacier-drive
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    restart: always

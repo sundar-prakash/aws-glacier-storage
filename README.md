@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Glacier Drive 📁❄️
 
-## Getting Started
+**Glacier Drive** is a personal, open-source cloud storage manager designed to store terabytes of archives, backups, and media files on **AWS S3 Glacier** and **Glacier Deep Archive** virtually for **free**.
 
-First, run the development server:
+It mirrors the clean, responsive visual aesthetic and color palette of Google Drive (Material Design 3) and adds an interactive **AWS Cost Optimizer & Blueprint** to help you achieve zero-cost long-term cloud storage.
+
+---
+
+## 🌟 Key Features
+
+- **Google Drive Aesthetics**: Styled with the exact hex colors, side navigation pill selectors, rounded file workspace container panels, and floating action button elements of Google Drive.
+- **Glacier Lifecycle Support**: Directly manage Frozen (Archived), Thawing (Restoring), and Active (Restored) S3 Glacier file states.
+- **Zero-Cost Blueprints**: Built-in pricing optimizer estimating AWS storage costs and highlighting how to leverage **Bulk Retrievals** ($0.00 AWS fees) and S3 Standard free allowances.
+- **Direct S3 Uploading**: Files bypass the Next.js server entirely, uploading directly from the browser to S3 via presigned PUT URLs, preventing server memory leaks or timeout errors on large file transfers.
+- **Virtual Folder Trees**: Directories are nested virtually inside S3 metadata, allowing instant renames, moves, and folder creations with **zero** S3 API operation fees.
+
+---
+
+## ⚙️ Configuration & Environment Variables
+
+Create a `.env.local` file in the root directory (based on `.env.local.example`) and configure the following variables:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# AWS S3 Access Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_REGION=ap-south-1 # e.g. Mumbai, us-east-1, etc.
+AWS_S3_BUCKET_NAME=your-s3-bucket-name
+
+# Admin Portal Authentication
+ADMIN_USER=admin
+ADMIN_PASS=admin123 # Replace with a strong password
+
+# Session Security
+JWT_SECRET=use-a-strong-jwt-signing-secret-key-32-chars-long
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🚀 Getting Started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Option 1: Local Development
 
-## Learn More
+1. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+2. **Run Dev Server**:
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) to view the application.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. **Build & Run Production**:
+   ```bash
+   npm run build
+   npm run start
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Option 2: Docker Containers (Recommended)
 
-## Deploy on Vercel
+1. Make sure Docker and Docker Compose are installed.
+2. Build and start the container:
+   ```bash
+   docker-compose up --build -d
+   ```
+3. The app is exposed on port `3000` at `http://localhost:3000`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🧪 Testing
+
+We use **Vitest** for running fast unit tests on our S3 parsers and stress-simulations on large file formatting limits.
+
+Run the test suite:
+```bash
+npm run test
+```
+
+---
+
+## 🔒 Security & Open-Source Guidelines
+
+To make this project safe for open-source contribution:
+1. **Secret Isolation**: Never commit `.env.local` or environment keys. They are explicitly excluded in `.gitignore`.
+2. **Direct Browser Uploader**: Large archive files do not pass through the web server. S3 returns short-lived presigned upload URLs, ensuring credentials are never exposed to clients, and file buffers do not leak on the hosting server.

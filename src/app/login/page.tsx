@@ -49,11 +49,10 @@ export default function LoginPage() {
         
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20 relative group">
+          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center mb-4 shadow-sm relative group">
             <Cloud className="w-8 h-8 text-white transition-transform duration-300 group-hover:scale-110" />
-            <div className="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-[var(--text-main)] via-[var(--text-sub)] to-[var(--text-muted)] bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold text-[var(--text-main)]">
             Glacier Drive
           </h1>
           <p className="text-[var(--text-sub)] text-sm mt-1">
@@ -110,7 +109,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium shadow-lg shadow-blue-600/15 hover:shadow-blue-500/25 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+            className="w-full py-3 px-4 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
           >
             {loading ? (
               <>

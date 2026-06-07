@@ -170,9 +170,10 @@ export default function DashboardPage() {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    const sizeIndex = Math.min(i, sizes.length - 1);
+    return parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(dm)) + ' ' + sizes[sizeIndex];
   };
 
   // Generate thumbnail blob from image file
@@ -737,9 +738,9 @@ export default function DashboardPage() {
       }`}>
         
         {/* Sidebar Header Logo */}
-        <div className="p-6 flex items-center justify-between border-b border-[var(--border-color)]">
+        <div className="p-5 flex items-center justify-between border-b border-[var(--border-color)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/15">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center shadow-sm">
               <Cloud className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col">
@@ -757,19 +758,25 @@ export default function DashboardPage() {
         </div>
 
         {/* New Button Section */}
-        <div className="p-4">
-          <div className="relative w-full" ref={newMenuRef}>
+        <div className="p-4 flex items-center">
+          <div className="relative" ref={newMenuRef}>
             <button 
               onClick={() => setIsNewMenuOpen(!isNewMenuOpen)}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/10 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 text-sm"
+              className="py-3 px-6 rounded-2xl bg-[var(--bg-card)] hover:bg-[var(--bg-hover)] border border-[var(--border-color)] text-[var(--text-main)] font-semibold shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-150 flex items-center gap-3 text-sm shrink-0"
             >
-              <Plus className="w-4 h-4" />
-              <span>New</span>
+              {/* Google Drive Multi-colored Plus SVG */}
+              <svg viewBox="0 0 36 36" className="w-6 h-6 shrink-0">
+                <path fill="#34A853" d="M16 16v14h4V20z" />
+                <path fill="#4285F4" d="M30 16H20v4h10z" />
+                <path fill="#FBBC05" d="M6 16v4h10v-4z" />
+                <path fill="#EA4335" d="M20 16V6h-4v10z" />
+              </svg>
+              <span className="text-sm font-medium tracking-wide">New</span>
             </button>
 
             {/* New Button Dropdown Menu */}
             {isNewMenuOpen && (
-              <div className="absolute left-0 right-0 mt-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1.5 z-40 text-left">
+              <div className="absolute left-0 mt-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1.5 z-40 text-left">
                 <button
                   onClick={() => {
                     setIsNewMenuOpen(false);
@@ -853,96 +860,110 @@ export default function DashboardPage() {
         </div>
 
         {/* Navigation Filters */}
-        <div className="px-3 py-2 flex-1 space-y-1">
+        <div className="py-2 flex-1 space-y-0.5">
           <button 
             onClick={() => setActiveTab('all')}
-            className={`w-full py-2.5 px-4 rounded-xl flex items-center gap-3.5 text-sm transition-all duration-150 ${
+            className={`w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 ${
               activeTab === 'all' 
-                ? 'bg-[var(--bg-hover)] text-[var(--text-main)] font-medium border-l-2 border-blue-500 rounded-l-none' 
+                ? 'active-pill-bg font-medium' 
                 : 'text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <FolderOpen className="w-4 h-4" />
+            <FolderOpen className={`w-4 h-4 ${activeTab === 'all' ? 'google-blue-icon' : ''}`} />
             <span>My Drive</span>
           </button>
           
           <button 
             onClick={() => setActiveTab('restoring')}
-            className={`w-full py-2.5 px-4 rounded-xl flex items-center gap-3.5 text-sm transition-all duration-150 ${
+            className={`w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 ${
               activeTab === 'restoring' 
-                ? 'bg-[var(--bg-hover)] text-[var(--text-main)] font-medium border-l-2 border-amber-500 rounded-l-none' 
+                ? 'active-pill-bg font-medium' 
                 : 'text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Clock className="w-4 h-4" />
+            <Clock className={`w-4 h-4 ${activeTab === 'restoring' ? 'google-blue-icon' : ''}`} />
             <span>Restoring</span>
           </button>
 
           <button 
             onClick={() => setActiveTab('available')}
-            className={`w-full py-2.5 px-4 rounded-xl flex items-center gap-3.5 text-sm transition-all duration-150 ${
+            className={`w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 ${
               activeTab === 'available' 
-                ? 'bg-[var(--bg-hover)] text-[var(--text-main)] font-medium border-l-2 border-emerald-500 rounded-l-none' 
+                ? 'active-pill-bg font-medium' 
                 : 'text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <CheckCircle2 className="w-4 h-4" />
+            <CheckCircle2 className={`w-4 h-4 ${activeTab === 'available' ? 'google-blue-icon' : ''}`} />
             <span>Available</span>
           </button>
 
           <button 
             onClick={() => setActiveTab('archived')}
-            className={`w-full py-2.5 px-4 rounded-xl flex items-center gap-3.5 text-sm transition-all duration-150 ${
+            className={`w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 ${
               activeTab === 'archived' 
-                ? 'bg-[var(--bg-hover)] text-[var(--text-main)] font-medium border-l-2 border-gray-400 rounded-l-none' 
+                ? 'active-pill-bg font-medium' 
                 : 'text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Archive className="w-4 h-4" />
+            <Archive className={`w-4 h-4 ${activeTab === 'archived' ? 'google-blue-icon' : ''}`} />
             <span>Archived</span>
           </button>
 
           <button 
             onClick={() => setActiveTab('pricing')}
-            className={`w-full py-2.5 px-4 rounded-xl flex items-center gap-3.5 text-sm transition-all duration-150 ${
+            className={`w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 ${
               activeTab === 'pricing' 
-                ? 'bg-[var(--bg-hover)] text-[var(--text-main)] font-medium border-l-2 border-blue-500 rounded-l-none' 
+                ? 'active-pill-bg font-medium' 
                 : 'text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <DollarSign className="w-4 h-4" />
+            <DollarSign className={`w-4 h-4 ${activeTab === 'pricing' ? 'google-blue-icon' : ''}`} />
             <span>Cost Optimizer</span>
           </button>
         </div>
 
         {/* Storage Usage Bar */}
-        <div className="p-4 border-t border-[var(--border-color)] bg-[var(--bg-sidebar)]/30">
-          <div className="flex items-center gap-2 mb-2 text-xs text-[var(--text-sub)]">
-            <Database className="w-3.5 h-3.5" />
-            <span>Storage Usage</span>
+        <div className="p-4 border-t border-[var(--border-color)] bg-[var(--bg-sidebar)]/30 flex flex-col gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-2 text-xs text-[var(--text-sub)]">
+              <Database className="w-3.5 h-3.5" />
+              <span>Storage Usage</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-[var(--bg-hover)] overflow-hidden">
+              <div 
+                style={{ width: `${storagePercentage}%` }}
+                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500" 
+              />
+            </div>
+            <div className="flex justify-between items-center mt-2 text-[10px] text-[var(--text-muted)]">
+              <span>{formatBytes(totalStorageSize)} used</span>
+              <span>10 GB Free Limit</span>
+            </div>
           </div>
-          <div className="w-full h-1.5 rounded-full bg-[var(--bg-hover)] overflow-hidden">
-            <div 
-              style={{ width: `${storagePercentage}%` }}
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500" 
-            />
-          </div>
-          <div className="flex justify-between items-center mt-2 text-[10px] text-[var(--text-muted)]">
-            <span>{formatBytes(totalStorageSize)} used</span>
-            <span>10 GB Free Limit</span>
+          
+          <div className="pt-2 border-t border-[var(--border-color)]/30 text-center text-[11px] text-[var(--text-muted)]">
+            <span>Made with ❤️ by </span>
+            <a 
+              href="https://github.com/sundar-prakash" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-[var(--google-blue)] hover:underline font-semibold"
+            >
+              sundar-prakash
+            </a>
           </div>
         </div>
 
       </div>
 
       {/* MAIN LAYOUT */}
-      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-main)] relative z-10">
         
         {/* HEADER */}
-        <header className="h-16 border-b border-[var(--border-color)] bg-[var(--bg-sidebar)]/30 backdrop-blur-md flex items-center justify-between px-4 md:px-8 shrink-0 gap-4">
+        <header className="h-16 bg-transparent flex items-center justify-between px-4 md:px-8 shrink-0 gap-4">
           
           {/* Mobile hamburger menu & Search bar container */}
-          <div className="flex items-center gap-3 flex-1 max-w-lg">
+          <div className="flex items-center gap-3 flex-1 max-w-xl">
             <button 
               onClick={() => setIsSidebarOpen(true)}
               className="p-2 rounded-lg text-[var(--text-sub)] hover:bg-[var(--bg-hover)] md:hidden transition-colors cursor-pointer shrink-0"
@@ -953,13 +974,13 @@ export default function DashboardPage() {
 
             {/* Search bar */}
             <div className="w-full relative">
-              <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-[var(--text-muted)]" />
+              <Search className="absolute left-4 top-3 w-4 h-4 text-[var(--text-muted)]" />
               <input 
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search files..."
-                className="w-full pl-10 pr-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all duration-200"
+                placeholder="Search in Glacier Drive"
+                className="w-full pl-12 pr-4 py-2.5 bg-[var(--bg-hover)] border border-transparent rounded-full text-sm text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:bg-[var(--bg-card)] focus:border-[var(--border-color)] focus:ring-1 focus:ring-blue-500/20 transition-all duration-200"
               />
             </div>
           </div>
@@ -1030,7 +1051,7 @@ export default function DashboardPage() {
             {/* Help & Documentation */}
             <button 
               onClick={() => setIsHelpOpen(true)}
-              className="p-2 rounded-lg bg-[var(--bg-sidebar)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
+              className="p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
               title="Help & Documentation"
             >
               <HelpCircle className="w-4 h-4 text-blue-500" />
@@ -1039,7 +1060,7 @@ export default function DashboardPage() {
             {/* Theme Toggle */}
             <button 
               onClick={toggleTheme}
-              className="p-2 rounded-lg bg-[var(--bg-sidebar)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
+              className="p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
@@ -1049,7 +1070,7 @@ export default function DashboardPage() {
             <button 
               onClick={handleLogout}
               disabled={loggingOut}
-              className="p-2 rounded-lg bg-[var(--bg-sidebar)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
+              className="p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4 text-rose-500" />
@@ -1059,7 +1080,7 @@ export default function DashboardPage() {
         </header>
 
         {/* WORKSPACE AREA */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto m-4 md:m-6 mt-0 p-6 md:p-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm flex flex-col min-h-0">
           
           {/* Breadcrumbs Path Navigation */}
           {activeTab === 'all' && (
