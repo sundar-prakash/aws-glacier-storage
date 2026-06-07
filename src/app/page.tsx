@@ -331,6 +331,8 @@ export default function DashboardPage() {
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('PUT', fileUploadUrl, true);
+          // Set AWS S3 storage class header matching the presigned signature
+          xhr.setRequestHeader('x-amz-storage-class', uploadClass);
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
@@ -351,7 +353,7 @@ export default function DashboardPage() {
           xhr.send(file);
         });
 
-        setUploadStatus(`Successfully uploaded "${file.name}" to S3 Glacier.`);
+        setUploadStatus(`Successfully uploaded "${file.name}" to S3 ${uploadClass === 'DEEP_ARCHIVE' ? 'Glacier Deep Archive' : 'Glacier Flexible'}.`);
         // Clean up progress
         setTimeout(() => {
           setUploadProgress(prev => {
@@ -646,13 +648,18 @@ export default function DashboardPage() {
 
     // Filter by tab status (globally for files only)
     if (activeTab === 'restoring') {
-      return !file.isFolder && file.restoreStatus === 'RESTORING';
+      if (file.isFolder || file.restoreStatus !== 'RESTORING') return false;
     }
     if (activeTab === 'available') {
-      return !file.isFolder && file.restoreStatus === 'RESTORED';
+      if (file.isFolder || file.restoreStatus !== 'RESTORED') return false;
     }
     if (activeTab === 'archived') {
-      return !file.isFolder && file.restoreStatus === 'ARCHIVED';
+      if (file.isFolder || file.restoreStatus !== 'ARCHIVED') return false;
+    }
+
+    // Filter files by the selected storage class context
+    if (!file.isFolder && file.storageClass !== uploadClass) {
+      return false;
     }
 
     // Apply search query globally if present
@@ -1082,25 +1089,35 @@ export default function DashboardPage() {
         {/* WORKSPACE AREA */}
         <main className="flex-1 overflow-y-auto m-2 sm:m-4 md:m-6 mt-0 p-3 sm:p-6 md:p-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm flex flex-col min-h-0">
           
-          {/* Breadcrumbs Path Navigation */}
+          {/* Breadcrumbs Path Navigation & Storage Class Context */}
           {activeTab === 'all' && (
-            <div className="flex items-center gap-2 mb-6 text-sm text-[var(--text-sub)] bg-[var(--bg-hover)] border border-[var(--border-color)] px-4 py-2.5 rounded-xl w-fit">
-              {getBreadcrumbs().map((crumb, idx, arr) => (
-                <React.Fragment key={crumb.id || 'root'}>
-                  <button
-                    onClick={() => setCurrentFolderId(crumb.id)}
-                    className={`hover:text-blue-400 transition-colors font-medium flex items-center gap-1.5 ${
-                      idx === arr.length - 1 ? 'text-[var(--text-main)] font-semibold cursor-default pointer-events-none' : ''
-                    }`}
-                  >
-                    {crumb.id === null && <Cloud className="w-4 h-4 text-blue-500" />}
-                    <span>{crumb.name}</span>
-                  </button>
-                  {idx < arr.length - 1 && (
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                  )}
-                </React.Fragment>
-              ))}
+            <div className="flex items-center gap-4 mb-6 flex-wrap">
+              <div className="flex items-center gap-2 text-sm text-[var(--text-sub)] bg-[var(--bg-hover)] border border-[var(--border-color)] px-4 py-2.5 rounded-xl w-fit shadow-sm">
+                {getBreadcrumbs().map((crumb, idx, arr) => (
+                  <React.Fragment key={crumb.id || 'root'}>
+                    <button
+                      onClick={() => setCurrentFolderId(crumb.id)}
+                      className={`hover:text-blue-400 transition-colors font-medium flex items-center gap-1.5 ${
+                        idx === arr.length - 1 ? 'text-[var(--text-main)] font-semibold cursor-default pointer-events-none' : ''
+                      }`}
+                    >
+                      {crumb.id === null && <Cloud className="w-4 h-4 text-blue-500" />}
+                      <span>{crumb.name}</span>
+                    </button>
+                    {idx < arr.length - 1 && (
+                      <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+              
+              <div className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border shadow-sm ${
+                uploadClass === 'DEEP_ARCHIVE' 
+                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+              }`}>
+                {uploadClass === 'DEEP_ARCHIVE' ? 'Deep Archive View' : 'Glacier Flexible View'}
+              </div>
             </div>
           )}
 
