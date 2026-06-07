@@ -620,22 +620,23 @@ export default function DashboardPage() {
     setRestoreDays(7);
   };
 
-  // Keyboard Shortcuts Effect Hook
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement;
-      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true')) {
-        return;
-      }
-
       if (e.key === 'Escape') {
         setSelectedFileIds(new Set());
         setIsCreateFolderModalOpen(false);
+        setCreateFolderName('');
         setRenameItem(null);
+        setRenameName('');
         setRestoreFile(null);
         setRestoreFilesList([]);
         setMoveItem(null);
         setIsHelpOpen(false);
+        return;
+      }
+
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true')) {
         return;
       }
 
