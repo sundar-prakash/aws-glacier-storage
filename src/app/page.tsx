@@ -88,6 +88,11 @@ export default function DashboardPage() {
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
   const [submittingMove, setSubmittingMove] = useState(false);
 
+  // Multi-select & Keyboard Shortcut States
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  const [restoreFilesList, setRestoreFilesList] = useState<FileMetadata[]>([]);
+
   // Rename Modal State
   const [renameItem, setRenameItem] = useState<FileMetadata | null>(null);
   const [renameName, setRenameName] = useState('');
@@ -95,6 +100,45 @@ export default function DashboardPage() {
 
   // Grid / Tile Size States
   const [gridSize, setGridSize] = useState<number>(2); // 1 = Small, 2 = Medium, 3 = Large, 4 = Extra Large
+
+  // Filter & Search files hierarchically
+  const filteredFiles = files.filter(file => {
+    // If we are in "all" (My Drive) and there is no search query, filter by parent directory
+    if (activeTab === 'all' && !searchQuery) {
+      const parentId = file.parentId || null;
+      if (parentId !== currentFolderId) return false;
+    }
+
+    // Filter by tab status (globally for files only)
+    if (activeTab === 'restoring') {
+      if (file.isFolder || file.restoreStatus !== 'RESTORING') return false;
+    }
+    if (activeTab === 'available') {
+      if (file.isFolder || file.restoreStatus !== 'RESTORED') return false;
+    }
+    if (activeTab === 'archived') {
+      if (file.isFolder || file.restoreStatus !== 'ARCHIVED') return false;
+    }
+
+    // Filter files by the selected storage class context
+    if (!file.isFolder && file.storageClass !== uploadClass) {
+      return false;
+    }
+
+    // Apply search query globally if present
+    if (searchQuery) {
+      return file.name.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+
+    return true;
+  });
+
+  // Sort files: Folders first, then alphabetically
+  const sortedFiles = [...filteredFiles].sort((a, b) => {
+    if (a.isFolder && !b.isFolder) return -1;
+    if (!a.isFolder && b.isFolder) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   // Load files and S3 status
   const fetchFiles = async () => {
@@ -423,28 +467,235 @@ export default function DashboardPage() {
 
   // Trigger restore options
   const handleRequestRestore = async () => {
-    if (!restoreFile) return;
+    const targets = restoreFile ? [restoreFile] : restoreFilesList;
+    if (targets.length === 0) return;
 
     setSubmittingRestore(true);
     try {
-      const res = await fetch(`/api/files/${restoreFile.id}/restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier: restoreTier, days: restoreDays }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setFiles(prev => prev.map(f => f.id === restoreFile.id ? data.file : f));
-        setRestoreFile(null); // Close modal
-      } else {
-        alert(data.error || 'Failed to request restore');
+      let succeededCount = 0;
+      let failedCount = 0;
+      let errorsList: string[] = [];
+
+      for (const file of targets) {
+        try {
+          const res = await fetch(`/api/files/${file.id}/restore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier: restoreTier, days: restoreDays }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setFiles(prev => prev.map(f => f.id === file.id ? data.file : f));
+            succeededCount++;
+          } else {
+            failedCount++;
+            errorsList.push(`${file.name}: ${data.error || 'Failed'}`);
+          }
+        } catch (err: any) {
+          failedCount++;
+          errorsList.push(`${file.name}: ${err.message}`);
+        }
       }
+
+      if (failedCount > 0) {
+        alert(`Restore requested with some issues:\n- Succeeded: ${succeededCount}\n- Failed: ${failedCount}\n\nErrors:\n${errorsList.join('\n')}`);
+      } else {
+        setUploadStatus(`Successfully requested restore for ${succeededCount} file(s).`);
+      }
+      setRestoreFile(null);
+      setRestoreFilesList([]);
     } catch (err) {
       console.error('Error initiating restore:', err);
     } finally {
       setSubmittingRestore(false);
     }
   };
+
+  // Multi-select helper functions
+  const handleItemClick = (e: React.MouseEvent, fileId: string) => {
+    e.stopPropagation();
+    
+    // Disable default browser text selection on shift+click
+    if (e.shiftKey) {
+      e.preventDefault();
+    }
+
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedFileIds(prev => {
+        const next = new Set(prev);
+        if (next.has(fileId)) {
+          next.delete(fileId);
+        } else {
+          next.add(fileId);
+        }
+        return next;
+      });
+      setLastSelectedId(fileId);
+    } else if (e.shiftKey && lastSelectedId) {
+      const idsList = sortedFiles.map(f => f.id);
+      const startIdx = idsList.indexOf(lastSelectedId);
+      const endIdx = idsList.indexOf(fileId);
+      
+      if (startIdx !== -1 && endIdx !== -1) {
+        const minIdx = Math.min(startIdx, endIdx);
+        const maxIdx = Math.max(startIdx, endIdx);
+        const rangeIds = idsList.slice(minIdx, maxIdx + 1);
+        
+        setSelectedFileIds(prev => {
+          const next = new Set(prev);
+          rangeIds.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else {
+      setSelectedFileIds(new Set([fileId]));
+      setLastSelectedId(fileId);
+    }
+  };
+
+  const handleItemDoubleClick = (file: FileMetadata) => {
+    if (file.isFolder) {
+      setCurrentFolderId(file.id);
+    } else {
+      if (file.restoreStatus === 'RESTORED') {
+        handleDownload(file.id, file.name);
+      } else {
+        setRestoreFile(file);
+      }
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedFileIds.size === 0) return;
+    const confirmDelete = window.confirm(`Are you sure you want to permanently delete the ${selectedFileIds.size} selected item(s) from S3? This action cannot be undone.`);
+    if (!confirmDelete) return;
+
+    setUploadStatus(`Deleting ${selectedFileIds.size} item(s)...`);
+    try {
+      const idsToDelete = Array.from(selectedFileIds);
+      for (const id of idsToDelete) {
+        const file = files.find(f => f.id === id);
+        if (!file) continue;
+
+        const res = await fetch(`/api/files/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Failed to delete');
+        }
+      }
+      setSelectedFileIds(new Set());
+      setUploadStatus("Successfully deleted selected items.");
+      fetchFiles();
+    } catch (err: any) {
+      console.error(err);
+      alert(`Error deleting items: ${err.message}`);
+      setUploadStatus(`Error deleting items: ${err.message}`);
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    const selectedFiles = files.filter(f => selectedFileIds.has(f.id) && !f.isFolder);
+    const restoredFiles = selectedFiles.filter(f => f.restoreStatus === 'RESTORED');
+    
+    if (restoredFiles.length === 0) {
+      alert("No restored (available) files in selection to download.");
+      return;
+    }
+
+    for (const file of restoredFiles) {
+      await handleDownload(file.id, file.name);
+    }
+  };
+
+  const handleRestoreSelected = () => {
+    const selectedFiles = files.filter(f => selectedFileIds.has(f.id) && !f.isFolder && f.restoreStatus === 'ARCHIVED');
+    if (selectedFiles.length === 0) {
+      alert("No archived files in selection to restore.");
+      return;
+    }
+    setRestoreFilesList(selectedFiles);
+    setRestoreTier('Bulk');
+    setRestoreDays(7);
+  };
+
+  // Keyboard Shortcuts Effect Hook
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true')) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setSelectedFileIds(new Set());
+        setIsCreateFolderModalOpen(false);
+        setRenameItem(null);
+        setRestoreFile(null);
+        setRestoreFilesList([]);
+        setMoveItem(null);
+        setIsHelpOpen(false);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setSelectedFileIds(new Set(sortedFiles.map(f => f.id)));
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        if (selectedFileIds.size > 0) {
+          handleDeleteSelected();
+        }
+        return;
+      }
+
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          setViewMode(prev => prev === 'list' ? 'grid' : prev === 'grid' ? 'tile' : 'list');
+          return;
+        }
+
+        if (e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          setIsCreateFolderModalOpen(true);
+          return;
+        }
+
+        if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          if (selectedFileIds.size === 1) {
+            const id = Array.from(selectedFileIds)[0];
+            const file = files.find(f => f.id === id);
+            if (file) {
+              setRenameItem(file);
+              setRenameName(file.name);
+            }
+          }
+          return;
+        }
+
+        if (e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          handleDownloadSelected();
+          return;
+        }
+
+        if (e.key === '?' || e.key === '/') {
+          e.preventDefault();
+          window.open('/shortcuts', '_blank');
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [sortedFiles, selectedFileIds, files]);
 
   // Download file
   const handleDownload = async (id: string, name: string) => {
@@ -638,44 +889,6 @@ export default function DashboardPage() {
     return <File className="w-5 h-5 text-gray-400" />;
   };
 
-  // Filter & Search files hierarchically
-  const filteredFiles = files.filter(file => {
-    // If we are in "all" (My Drive) and there is no search query, filter by parent directory
-    if (activeTab === 'all' && !searchQuery) {
-      const parentId = file.parentId || null;
-      if (parentId !== currentFolderId) return false;
-    }
-
-    // Filter by tab status (globally for files only)
-    if (activeTab === 'restoring') {
-      if (file.isFolder || file.restoreStatus !== 'RESTORING') return false;
-    }
-    if (activeTab === 'available') {
-      if (file.isFolder || file.restoreStatus !== 'RESTORED') return false;
-    }
-    if (activeTab === 'archived') {
-      if (file.isFolder || file.restoreStatus !== 'ARCHIVED') return false;
-    }
-
-    // Filter files by the selected storage class context
-    if (!file.isFolder && file.storageClass !== uploadClass) {
-      return false;
-    }
-
-    // Apply search query globally if present
-    if (searchQuery) {
-      return file.name.toLowerCase().includes(searchQuery.toLowerCase());
-    }
-
-    return true;
-  });
-
-  // Sort files: Folders first, then alphabetically
-  const sortedFiles = [...filteredFiles].sort((a, b) => {
-    if (a.isFolder && !b.isFolder) return -1;
-    if (!a.isFolder && b.isFolder) return 1;
-    return a.name.localeCompare(b.name);
-  });
 
   // Calculate storage usage
   const totalStorageSize = files.reduce((acc, f) => acc + f.size, 0);
@@ -1194,110 +1407,334 @@ export default function DashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border-color)]">
-                      {sortedFiles.map((file) => (
-                        <tr key={file.id} className="hover:bg-[var(--bg-hover)] transition-colors group">
-                          {/* File Name & Preview */}
-                          <td className="py-4 px-6 font-medium text-[var(--text-main)]">
-                            <div 
-                              className="flex items-center gap-3 cursor-pointer"
-                              onClick={(e) => {
-                                if (file.isFolder) {
-                                  setCurrentFolderId(file.id);
-                                } else {
-                                  e.stopPropagation();
-                                  setActiveMenuId(activeMenuId === file.id ? null : file.id);
-                                }
-                              }}
-                            >
-                              {file.hasPreview ? (
-                                <div className="w-10 h-10 rounded bg-[var(--bg-card)] overflow-hidden flex items-center justify-center border border-[var(--border-color)] relative shrink-0">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img 
-                                    src={`/api/files/${file.id}/preview`} 
-                                    alt={file.name} 
-                                    className="w-full h-full object-cover" 
-                                    onError={(e) => {
-                                      // Fallback if preview fails
-                                      (e.target as HTMLElement).style.display = 'none';
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <div className="w-10 h-10 rounded bg-[var(--bg-card)] flex items-center justify-center border border-[var(--border-color)] shrink-0">
-                                  {getFileIcon(file.mimeType)}
-                                </div>
-                              )}
-                              <span 
-                                className={`truncate max-w-[200px] sm:max-w-[300px] block ${file.isFolder ? 'hover:text-blue-400 hover:underline font-semibold' : ''}`} 
-                                title={file.name}
-                              >
-                                {file.name}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Status Badge */}
-                          <td className="py-4 px-6">
-                            {file.isFolder ? (
-                              <span className="text-[var(--text-muted)] font-medium text-xs">—</span>
-                            ) : (
-                              <>
-                                {file.restoreStatus === 'ARCHIVED' && (
-                                  <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-gray-500/10 text-[var(--text-sub)] border border-gray-500/20">
-                                    <Archive className="w-3 h-3" />
-                                    <span>Archived</span>
-                                  </span>
-                                )}
-                                {file.restoreStatus === 'RESTORING' && (
-                                  <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                    <span>Restoring ({file.restoreTier})</span>
-                                  </span>
-                                )}
-                                {file.restoreStatus === 'RESTORED' && (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                      <CheckCircle2 className="w-3 h-3" />
-                                      <span>Available</span>
-                                    </span>
-                                    {file.restoredUntil && (
-                                      <span className="text-[10px] text-[var(--text-muted)] pl-1">
-                                        Expires: {new Date(file.restoredUntil).toLocaleDateString()}
-                                      </span>
-                                    )}
+                      {sortedFiles.map((file) => {
+                        const isSelected = selectedFileIds.has(file.id);
+                        return (
+                          <tr 
+                            key={file.id} 
+                            onClick={(e) => handleItemClick(e, file.id)}
+                            onDoubleClick={() => handleItemDoubleClick(file)}
+                            className={`hover:bg-[var(--bg-hover)] transition-colors group cursor-pointer ${
+                              isSelected ? 'bg-blue-500/10 hover:bg-blue-500/15' : ''
+                            }`}
+                          >
+                            {/* File Name & Preview */}
+                            <td className="py-4 px-6 font-medium text-[var(--text-main)]">
+                              <div className="flex items-center gap-3">
+                                {file.hasPreview ? (
+                                  <div className="w-10 h-10 rounded bg-[var(--bg-card)] overflow-hidden flex items-center justify-center border border-[var(--border-color)] relative shrink-0">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img 
+                                      src={`/api/files/${file.id}/preview`} 
+                                      alt={file.name} 
+                                      className="w-full h-full object-cover" 
+                                      onError={(e) => {
+                                        // Fallback if preview fails
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-10 h-10 rounded bg-[var(--bg-card)] flex items-center justify-center border border-[var(--border-color)] shrink-0">
+                                    {getFileIcon(file.mimeType)}
                                   </div>
                                 )}
-                              </>
-                            )}
-                          </td>
+                                <span 
+                                  className={`truncate max-w-[200px] sm:max-w-[300px] block ${file.isFolder ? 'hover:text-blue-400 hover:underline font-semibold' : ''}`} 
+                                  title={file.name}
+                                >
+                                  {file.name}
+                                </span>
+                              </div>
+                            </td>
 
-                          {/* Storage Class */}
-                          <td className="py-4 px-6 text-xs text-[var(--text-sub)] font-mono hidden md:table-cell">
-                            {file.isFolder ? (
-                              <span className="text-amber-500/70 font-semibold">Folder</span>
-                            ) : (
-                              file.storageClass === 'DEEP_ARCHIVE' ? 'Deep Archive' : 'Glacier Flexible'
-                            )}
-                          </td>
+                            {/* Status Badge */}
+                            <td className="py-4 px-6">
+                              {file.isFolder ? (
+                                <span className="text-[var(--text-muted)] font-medium text-xs">—</span>
+                              ) : (
+                                <>
+                                  {file.restoreStatus === 'ARCHIVED' && (
+                                    <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-gray-500/10 text-[var(--text-sub)] border border-gray-500/20">
+                                      <Archive className="w-3 h-3" />
+                                      <span>Archived</span>
+                                    </span>
+                                  )}
+                                  {file.restoreStatus === 'RESTORING' && (
+                                    <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                                      <RefreshCw className="w-3 h-3 animate-spin" />
+                                      <span>Restoring ({file.restoreTier})</span>
+                                    </span>
+                                  )}
+                                  {file.restoreStatus === 'RESTORED' && (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>Available</span>
+                                      </span>
+                                      {file.restoredUntil && (
+                                        <span className="text-[10px] text-[var(--text-muted)] pl-1">
+                                          Expires: {new Date(file.restoredUntil).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </td>
 
-                          {/* Size */}
-                          <td className="py-4 px-6 text-sm text-[var(--text-main)] hidden sm:table-cell">
-                            {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
-                          </td>
+                            {/* Storage Class */}
+                            <td className="py-4 px-6 text-xs text-[var(--text-sub)] font-mono hidden md:table-cell">
+                              {file.isFolder ? (
+                                <span className="text-amber-500/70 font-semibold">Folder</span>
+                              ) : (
+                                file.storageClass === 'DEEP_ARCHIVE' ? 'Deep Archive' : 'Glacier Flexible'
+                              )}
+                            </td>
 
-                          {/* Date Modified */}
-                          <td className="py-4 px-6 text-sm text-[var(--text-sub)] hidden lg:table-cell">
-                            {new Date(file.modifiedAt || file.uploadedAt).toLocaleDateString()}
-                          </td>
+                            {/* Size */}
+                            <td className="py-4 px-6 text-sm text-[var(--text-main)] hidden sm:table-cell">
+                              {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
+                            </td>
 
-                          {/* Actions */}
-                          <td className="py-4 px-6 text-right relative">
-                            <div className="flex items-center justify-end gap-2">
-                              {/* Primary action based on state */}
+                            {/* Date Modified */}
+                            <td className="py-4 px-6 text-sm text-[var(--text-sub)] hidden lg:table-cell">
+                              {new Date(file.modifiedAt || file.uploadedAt).toLocaleDateString()}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-4 px-6 text-right relative">
+                              <div className="flex items-center justify-end gap-2">
+                                {/* Primary action based on state */}
+                                {file.isFolder ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCurrentFolderId(file.id);
+                                    }}
+                                    className="py-1.5 px-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-all text-xs font-semibold"
+                                  >
+                                    Open
+                                  </button>
+                                ) : (
+                                  <>
+                                    {file.restoreStatus === 'ARCHIVED' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRestoreFile(file);
+                                        }}
+                                        className="py-1.5 px-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all text-xs font-semibold"
+                                      >
+                                        Restore
+                                      </button>
+                                    )}
+                                    {file.restoreStatus === 'RESTORING' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSyncStatus(file.id);
+                                        }}
+                                        className="py-1.5 px-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-all text-xs font-semibold flex items-center gap-1"
+                                      >
+                                        <RefreshCw className="w-3 h-3" />
+                                        <span>Check</span>
+                                      </button>
+                                    )}
+                                    {file.restoreStatus === 'RESTORED' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDownload(file.id, file.name);
+                                        }}
+                                        className="py-1.5 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-xs font-semibold flex items-center gap-1"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Download</span>
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+
+                                {/* More action menu */}
+                                <div className="relative">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenuId(activeMenuId === file.id ? null : file.id);
+                                    }}
+                                    className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
+                                  >
+                                    <MoreVertical className="w-4 h-4" />
+                                  </button>
+                                  
+                                  {activeMenuId === file.id && (
+                                    <div 
+                                      ref={menuRef}
+                                      className="absolute right-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
+                                    >
+                                      {file.restoreStatus === 'RESTORED' && !file.isFolder && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveMenuId(null);
+                                            handleDownload(file.id, file.name);
+                                          }}
+                                          className="w-full px-4 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                          <span>Download</span>
+                                        </button>
+                                      )}
+                                      {file.restoreStatus === 'ARCHIVED' && !file.isFolder && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveMenuId(null);
+                                            setRestoreFile(file);
+                                          }}
+                                          className="w-full px-4 py-2 text-xs text-blue-400 hover:bg-blue-500/10 flex items-center gap-2"
+                                        >
+                                          <Clock className="w-3.5 h-3.5" />
+                                          <span>Restore</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveMenuId(null);
+                                          setRenameItem(file);
+                                          setRenameName(file.name);
+                                        }}
+                                        className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                                      >
+                                        <Edit className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                        <span>Rename</span>
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveMenuId(null);
+                                          setMoveItem(file);
+                                          setMoveTargetFolderId(null);
+                                        }}
+                                        className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                                      >
+                                        <Move className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                        <span>Move to...</span>
+                                      </button>
+                                      <div className="border-t border-[var(--border-color)] my-1" />
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveMenuId(null);
+                                          handleDelete(file);
+                                        }}
+                                        className="w-full px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Delete</span>
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* GRID VIEW */}
+              {viewMode === 'grid' && (
+                <div className={getGridColsClass()}>
+                  {sortedFiles.map((file) => {
+                    const isSelected = selectedFileIds.has(file.id);
+                    return (
+                      <div 
+                        key={file.id} 
+                        onClick={(e) => handleItemClick(e, file.id)}
+                        onDoubleClick={() => handleItemDoubleClick(file)}
+                        className={`group bg-[var(--bg-sidebar)]/30 border rounded-xl overflow-hidden shadow-lg hover:border-[var(--text-sub)]/30 transition-all duration-300 flex flex-col cursor-pointer ${
+                          isSelected ? 'border-blue-500 bg-blue-500/5 ring-1 ring-blue-500/30' : 'border-[var(--border-color)]'
+                        }`}
+                      >
+                        {/* Image Preview / File Icon Panel */}
+                        <div className={`${getGridCardHeight()} bg-[var(--bg-card)]/80 flex items-center justify-center relative border-b border-[var(--border-color)]`}>
+                          {file.isFolder ? (
+                             <div className="w-16 h-16 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex items-center justify-center transition-transform group-hover:scale-105 duration-200">
+                               <Folder className="w-8 h-8 text-amber-500 fill-amber-500/10" />
+                             </div>
+                          ) : file.hasPreview && gridSize > 1 ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img 
+                              src={`/api/files/${file.id}/preview`} 
+                              alt={file.name} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-[var(--bg-hover)] border border-[var(--border-color)] flex items-center justify-center">
+                              {getFileIcon(file.mimeType)}
+                            </div>
+                          )}
+                          
+                          {/* Status Badge floating */}
+                          {!file.isFolder && (
+                            <div className="absolute top-3 left-3">
+                              {file.restoreStatus === 'ARCHIVED' && (
+                                <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-gray-500/15 text-[var(--text-sub)] border border-gray-500/20 backdrop-blur-sm">
+                                  Archived
+                                </span>
+                              )}
+                              {file.restoreStatus === 'RESTORING' && (
+                                <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/20 backdrop-blur-sm animate-pulse">
+                                  Restoring
+                                </span>
+                              )}
+                              {file.restoreStatus === 'RESTORED' && (
+                                <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 backdrop-blur-sm">
+                                  Available
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Info Panel */}
+                        <div className="p-4 flex flex-col gap-1.5 flex-1 justify-between">
+                          <div className="min-w-0">
+                            <h4 
+                              className={`text-sm font-semibold text-[var(--text-main)] truncate ${file.isFolder ? 'group-hover:text-blue-400' : ''}`} 
+                              title={file.name}
+                            >
+                              {file.name}
+                            </h4>
+                            <span className="text-[11px] text-[var(--text-muted)] font-mono">
+                              {file.isFolder ? 'Directory Folder' : (file.storageClass === 'DEEP_ARCHIVE' ? 'Deep Archive' : 'Flexible Glacier')}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center mt-2.5 pt-2.5 border-t border-[var(--border-color)]">
+                            <span className="text-xs text-[var(--text-sub)]">
+                              {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
+                            </span>
+
+                            <div className="flex items-center gap-1">
+                              {/* Action shortcuts */}
                               {file.isFolder ? (
                                 <button
-                                  onClick={() => setCurrentFolderId(file.id)}
-                                  className="py-1.5 px-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-all text-xs font-semibold"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentFolderId(file.id);
+                                  }}
+                                  className="py-1 px-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] text-[10px] font-bold transition-all"
                                 >
                                   Open
                                 </button>
@@ -1305,53 +1742,63 @@ export default function DashboardPage() {
                                 <>
                                   {file.restoreStatus === 'ARCHIVED' && (
                                     <button
-                                      onClick={() => setRestoreFile(file)}
-                                      className="py-1.5 px-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all text-xs font-semibold"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setRestoreFile(file);
+                                      }}
+                                      className="py-1 px-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all text-[10px] font-bold"
                                     >
                                       Restore
                                     </button>
                                   )}
                                   {file.restoreStatus === 'RESTORING' && (
                                     <button
-                                      onClick={() => handleSyncStatus(file.id)}
-                                      className="py-1.5 px-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-all text-xs font-semibold flex items-center gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSyncStatus(file.id);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-all"
+                                      title="Check status"
                                     >
                                       <RefreshCw className="w-3 h-3" />
-                                      <span>Check</span>
                                     </button>
                                   )}
                                   {file.restoreStatus === 'RESTORED' && (
                                     <button
-                                      onClick={() => handleDownload(file.id, file.name)}
-                                      className="py-1.5 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-xs font-semibold flex items-center gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownload(file.id, file.name);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+                                      title="Download File"
                                     >
                                       <Download className="w-3.5 h-3.5" />
-                                      <span>Download</span>
                                     </button>
                                   )}
                                 </>
                               )}
 
-                              {/* More action menu */}
+                              {/* 3-dot Menu */}
                               <div className="relative">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setActiveMenuId(activeMenuId === file.id ? null : file.id);
                                   }}
-                                  className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
+                                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
                                 >
-                                  <MoreVertical className="w-4 h-4" />
+                                  <MoreVertical className="w-3.5 h-3.5" />
                                 </button>
                                 
                                 {activeMenuId === file.id && (
                                   <div 
                                     ref={menuRef}
-                                    className="absolute right-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
+                                    className="absolute right-0 bottom-full mb-1 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
                                   >
                                     {file.restoreStatus === 'RESTORED' && !file.isFolder && (
                                       <button
-                                        onClick={() => {
+                                        onClick={(e) => {
+                                          e.stopPropagation();
                                           setActiveMenuId(null);
                                           handleDownload(file.id, file.name);
                                         }}
@@ -1361,20 +1808,9 @@ export default function DashboardPage() {
                                         <span>Download</span>
                                       </button>
                                     )}
-                                    {file.restoreStatus === 'ARCHIVED' && !file.isFolder && (
-                                      <button
-                                        onClick={() => {
-                                          setActiveMenuId(null);
-                                          setRestoreFile(file);
-                                        }}
-                                        className="w-full px-4 py-2 text-xs text-blue-400 hover:bg-blue-500/10 flex items-center gap-2"
-                                      >
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>Restore</span>
-                                      </button>
-                                    )}
                                     <button
-                                      onClick={() => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setActiveMenuId(null);
                                         setRenameItem(file);
                                         setRenameName(file.name);
@@ -1385,7 +1821,8 @@ export default function DashboardPage() {
                                       <span>Rename</span>
                                     </button>
                                     <button
-                                      onClick={() => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setActiveMenuId(null);
                                         setMoveItem(file);
                                         setMoveTargetFolderId(null);
@@ -1397,7 +1834,8 @@ export default function DashboardPage() {
                                     </button>
                                     <div className="border-t border-[var(--border-color)] my-1" />
                                     <button
-                                      onClick={() => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setActiveMenuId(null);
                                         handleDelete(file);
                                       }}
@@ -1409,156 +1847,78 @@ export default function DashboardPage() {
                                   </div>
                                 )}
                               </div>
-
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              {/* GRID VIEW */}
-              {viewMode === 'grid' && (
-                <div className={getGridColsClass()}>
-                  {sortedFiles.map((file) => (
-                    <div 
-                      key={file.id} 
-                      className="group bg-[var(--bg-sidebar)]/30 border border-[var(--border-color)] rounded-xl overflow-hidden shadow-lg hover:border-[var(--text-sub)]/30 transition-all duration-300 flex flex-col cursor-pointer"
-                      onClick={(e) => {
-                        if (file.isFolder) {
-                          setCurrentFolderId(file.id);
-                        } else {
-                          e.stopPropagation();
-                          setActiveMenuId(activeMenuId === file.id ? null : file.id);
-                        }
-                      }}
-                    >
-                      {/* Image Preview / File Icon Panel */}
-                      <div className={`${getGridCardHeight()} bg-[var(--bg-card)]/80 flex items-center justify-center relative border-b border-[var(--border-color)]`}>
-                        {file.isFolder ? (
-                           <div className="w-16 h-16 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex items-center justify-center transition-transform group-hover:scale-105 duration-200">
-                             <Folder className="w-8 h-8 text-amber-500 fill-amber-500/10" />
-                           </div>
-                        ) : file.hasPreview && gridSize > 1 ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img 
-                            src={`/api/files/${file.id}/preview`} 
-                            alt={file.name} 
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-[var(--bg-hover)] border border-[var(--border-color)] flex items-center justify-center">
+              {/* TILE VIEW (COMPACT) */}
+              {viewMode === 'tile' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5 animate-fadeIn">
+                  {sortedFiles.map((file) => {
+                    const isSelected = selectedFileIds.has(file.id);
+                    return (
+                      <div 
+                        key={file.id}
+                        onClick={(e) => handleItemClick(e, file.id)}
+                        onDoubleClick={() => handleItemDoubleClick(file)}
+                        className={`group border hover:border-[var(--text-sub)]/30 rounded-xl p-3 flex items-center justify-between shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer ${
+                          isSelected ? 'border-blue-500 bg-blue-500/5 ring-1 ring-blue-500/30' : 'bg-[var(--bg-sidebar)]/30 border-[var(--border-color)]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-lg bg-[var(--bg-card)] flex items-center justify-center shrink-0 border border-[var(--border-color)] group-hover:scale-105 transition-transform">
                             {getFileIcon(file.mimeType)}
                           </div>
-                        )}
-                        
-                        {/* Status Badge floating */}
-                        {!file.isFolder && (
-                          <div className="absolute top-3 left-3">
-                            {file.restoreStatus === 'ARCHIVED' && (
-                              <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-gray-500/15 text-[var(--text-sub)] border border-gray-500/20 backdrop-blur-sm">
-                                Archived
-                              </span>
-                            )}
-                            {file.restoreStatus === 'RESTORING' && (
-                              <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/20 backdrop-blur-sm animate-pulse">
-                                Restoring
-                              </span>
-                            )}
-                            {file.restoreStatus === 'RESTORED' && (
-                              <span className="py-0.5 px-2 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 backdrop-blur-sm">
-                                Available
-                              </span>
-                            )}
+                          <div className="flex flex-col min-w-0">
+                            <span className={`text-xs font-semibold text-[var(--text-main)] truncate pr-1 ${file.isFolder ? 'group-hover:text-blue-400' : ''}`} title={file.name}>
+                              {file.name}
+                            </span>
+                            <span className="text-[10px] text-[var(--text-muted)] font-medium font-mono">
+                              {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
+                            </span>
                           </div>
-                        )}
-                      </div>
-
-                      {/* Info Panel */}
-                      <div className="p-4 flex flex-col gap-1.5 flex-1 justify-between" onClick={(e) => e.stopPropagation()}>
-                        <div className="min-w-0">
-                          <h4 
-                            className={`text-sm font-semibold text-[var(--text-main)] truncate ${file.isFolder ? 'group-hover:text-blue-400' : ''}`} 
-                            title={file.name}
-                            onClick={() => file.isFolder ? setCurrentFolderId(file.id) : null}
-                          >
-                            {file.name}
-                          </h4>
-                          <span className="text-[11px] text-[var(--text-muted)] font-mono">
-                            {file.isFolder ? 'Directory Folder' : (file.storageClass === 'DEEP_ARCHIVE' ? 'Deep Archive' : 'Flexible Glacier')}
-                          </span>
                         </div>
 
-                        <div className="flex justify-between items-center mt-2.5 pt-2.5 border-t border-[var(--border-color)]">
-                          <span className="text-xs text-[var(--text-sub)]">
-                            {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
-                          </span>
-
-                          <div className="flex items-center gap-1">
-                            {/* Action shortcuts */}
-                            {file.isFolder ? (
-                              <button
-                                onClick={() => setCurrentFolderId(file.id)}
-                                className="py-1 px-2.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] text-[10px] font-bold transition-all"
-                              >
-                                Open
-                              </button>
-                            ) : (
-                              <>
-                                {file.restoreStatus === 'ARCHIVED' && (
-                                  <button
-                                    onClick={() => setRestoreFile(file)}
-                                    className="py-1 px-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all text-[10px] font-bold"
-                                  >
-                                    Restore
-                                  </button>
-                                )}
-                                {file.restoreStatus === 'RESTORING' && (
-                                  <button
-                                    onClick={() => handleSyncStatus(file.id)}
-                                    className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-all"
-                                    title="Check status"
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                  </button>
-                                )}
-                                {file.restoreStatus === 'RESTORED' && (
-                                  <button
-                                    onClick={() => handleDownload(file.id, file.name)}
-                                    className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-                                    title="Download File"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </>
-                            )}
-
-                            {/* 3-dot Menu */}
-                            <div className="relative">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveMenuId(activeMenuId === file.id ? null : file.id);
-                                }}
-                                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
-                              >
-                                <MoreVertical className="w-3.5 h-3.5" />
-                              </button>
-                              
-                              {activeMenuId === file.id && (
-                                <div 
-                                  ref={menuRef}
-                                  className="absolute right-0 bottom-full mb-1 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
+                        {/* Options */}
+                        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuId(activeMenuId === file.id ? null : file.id);
+                            }}
+                            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                          
+                          {activeMenuId === file.id && (
+                            <div 
+                              ref={menuRef}
+                              className="absolute right-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
+                            >
+                              {file.isFolder ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveMenuId(null);
+                                    setCurrentFolderId(file.id);
+                                  }}
+                                  className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                                 >
-                                  {file.restoreStatus === 'RESTORED' && !file.isFolder && (
+                                  <FolderOpen className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                  <span>Open Folder</span>
+                                </button>
+                              ) : (
+                                <>
+                                  {file.restoreStatus === 'RESTORED' && (
                                     <button
-                                      onClick={() => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setActiveMenuId(null);
                                         handleDownload(file.id, file.name);
                                       }}
@@ -1568,171 +1928,63 @@ export default function DashboardPage() {
                                       <span>Download</span>
                                     </button>
                                   )}
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      setRenameItem(file);
-                                      setRenameName(file.name);
-                                    }}
-                                    className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
-                                  >
-                                    <Edit className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                                    <span>Rename</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      setMoveItem(file);
-                                      setMoveTargetFolderId(null);
-                                    }}
-                                    className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
-                                  >
-                                    <Move className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                                    <span>Move to...</span>
-                                  </button>
-                                  <div className="border-t border-[var(--border-color)] my-1" />
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      handleDelete(file);
-                                    }}
-                                    className="w-full px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete</span>
-                                  </button>
-                                </div>
+                                  {file.restoreStatus === 'ARCHIVED' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveMenuId(null);
+                                        setRestoreFile(file);
+                                      }}
+                                      className="w-full px-4 py-2 text-xs text-blue-400 hover:bg-blue-500/10 flex items-center gap-2"
+                                    >
+                                      <Clock className="w-3.5 h-3.5" />
+                                      <span>Restore</span>
+                                    </button>
+                                  )}
+                                </>
                               )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* TILE VIEW (COMPACT) */}
-              {viewMode === 'tile' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5 animate-fadeIn">
-                  {sortedFiles.map((file) => (
-                    <div 
-                      key={file.id}
-                      onClick={(e) => {
-                        if (file.isFolder) {
-                          setCurrentFolderId(file.id);
-                        } else {
-                          e.stopPropagation();
-                          setActiveMenuId(activeMenuId === file.id ? null : file.id);
-                        }
-                      }}
-                      className="group bg-[var(--bg-sidebar)]/30 border border-[var(--border-color)] hover:border-[var(--text-sub)]/30 rounded-xl p-3 flex items-center justify-between shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-[var(--bg-card)] flex items-center justify-center shrink-0 border border-[var(--border-color)] group-hover:scale-105 transition-transform">
-                          {getFileIcon(file.mimeType)}
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <span className={`text-xs font-semibold text-[var(--text-main)] truncate pr-1 ${file.isFolder ? 'group-hover:text-blue-400' : ''}`} title={file.name}>
-                            {file.name}
-                          </span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-medium font-mono">
-                            {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Options */}
-                      <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setActiveMenuId(activeMenuId === file.id ? null : file.id)}
-                          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
-                        >
-                          <MoreVertical className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {activeMenuId === file.id && (
-                          <div 
-                            ref={menuRef}
-                            className="absolute right-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl py-1 z-30 text-left"
-                          >
-                            {file.isFolder ? (
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setActiveMenuId(null);
-                                  setCurrentFolderId(file.id);
+                                  setRenameItem(file);
+                                  setRenameName(file.name);
                                 }}
                                 className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                               >
-                                <FolderOpen className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                                <span>Open Folder</span>
+                                <Edit className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                <span>Rename</span>
                               </button>
-                            ) : (
-                              <>
-                                {file.restoreStatus === 'RESTORED' && (
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      handleDownload(file.id, file.name);
-                                    }}
-                                    className="w-full px-4 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Download</span>
-                                  </button>
-                                )}
-                                {file.restoreStatus === 'ARCHIVED' && (
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      setRestoreFile(file);
-                                    }}
-                                    className="w-full px-4 py-2 text-xs text-blue-400 hover:bg-blue-500/10 flex items-center gap-2"
-                                  >
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span>Restore</span>
-                                  </button>
-                                )}
-                              </>
-                            )}
-                            <button
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                setRenameItem(file);
-                                setRenameName(file.name);
-                              }}
-                              className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
-                            >
-                              <Edit className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                              <span>Rename</span>
-                            </button>
-                            <button
-                              onClick={() => {
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setActiveMenuId(null);
                                   setMoveItem(file);
                                   setMoveTargetFolderId(null);
-                              }}
-                              className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
-                            >
-                              <Move className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                              <span>Move to...</span>
-                            </button>
-                            <div className="border-t border-[var(--border-color)] my-1" />
-                            <button
-                              onClick={() => {
-                                setActiveMenuId(null);
-                                handleDelete(file);
-                              }}
-                              className="w-full px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          </div>
-                        )}
+                                }}
+                                className="w-full px-4 py-2 text-xs text-[var(--text-main)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                              >
+                                <Move className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                <span>Move to...</span>
+                              </button>
+                              <div className="border-t border-[var(--border-color)] my-1" />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuId(null);
+                                  handleDelete(file);
+                                }}
+                                className="w-full px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -1742,12 +1994,15 @@ export default function DashboardPage() {
       </div>
 
       {/* RESTORE DIALOG MODAL */}
-      {restoreFile && (
+      {(restoreFile || restoreFilesList.length > 0) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
           <div className="w-full max-w-md bg-[var(--bg-main)] border border-[var(--border-color)] rounded-2xl p-6 shadow-2xl relative">
             <h3 className="text-lg font-bold text-[var(--text-main)] mb-2">Request S3 Glacier Restore</h3>
             <p className="text-xs text-[var(--text-sub)] mb-6">
-              Requesting access for file: <span className="text-[var(--text-main)] font-semibold">{restoreFile.name}</span>
+              Requesting access for:{' '}
+              <span className="text-[var(--text-main)] font-semibold">
+                {restoreFile ? restoreFile.name : `${restoreFilesList.length} selected files`}
+              </span>
             </p>
 
             <div className="space-y-5">
@@ -1840,7 +2095,10 @@ export default function DashboardPage() {
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4 border-t border-[var(--border-color)] mt-6">
                 <button
-                  onClick={() => setRestoreFile(null)}
+                  onClick={() => {
+                    setRestoreFile(null);
+                    setRestoreFilesList([]);
+                  }}
                   disabled={submittingRestore}
                   className="flex-1 py-2.5 px-4 rounded-xl border border-[var(--border-color)] text-[var(--text-sub)] font-semibold text-sm hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
@@ -2187,6 +2445,53 @@ export default function DashboardPage() {
                 Got it
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING ACTION BAR FOR MULTI-SELECT */}
+      {selectedFileIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[var(--bg-card)] border border-[var(--border-color)] px-5 py-3 rounded-full shadow-2xl flex items-center gap-5 backdrop-blur-lg animate-slideUp transition-all duration-300">
+          <div className="flex items-center gap-2 border-r border-[var(--border-color)] pr-4">
+            <button 
+              onClick={() => setSelectedFileIds(new Set())}
+              className="p-1 rounded-full text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-semibold text-[var(--text-main)] whitespace-nowrap">
+              {selectedFileIds.size} selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadSelected}
+              className="flex items-center gap-1.5 py-1.5 px-3 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all"
+              title="Download selected restored files"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download</span>
+            </button>
+
+            <button
+              onClick={handleRestoreSelected}
+              className="flex items-center gap-1.5 py-1.5 px-3 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-all"
+              title="Restore selected archived files"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Restore</span>
+            </button>
+
+            <button
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-1.5 py-1.5 px-3 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all"
+              title="Delete selected files/folders"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Delete</span>
+            </button>
           </div>
         </div>
       )}
