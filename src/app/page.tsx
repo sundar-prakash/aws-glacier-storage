@@ -34,9 +34,11 @@ import {
   Percent,
   Sun,
   Moon,
-  Menu,
-  X
+  X,
+  Keyboard,
+  Menu
 } from 'lucide-react';
+import Link from 'next/link';
 import type { FileMetadata } from '@/lib/s3';
 
 export default function DashboardPage() {
@@ -1140,6 +1142,15 @@ export default function DashboardPage() {
             <DollarSign className={`w-4 h-4 ${activeTab === 'pricing' ? 'google-blue-icon' : ''}`} />
             <span>Cost Optimizer</span>
           </button>
+
+          <Link
+            href="/shortcuts"
+            target="_blank"
+            className="w-[92%] py-2 px-6 rounded-r-full flex items-center gap-3.5 text-sm transition-all duration-150 text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]"
+          >
+            <Keyboard className="w-4 h-4 text-[var(--text-muted)]" />
+            <span>Shortcuts Help</span>
+          </Link>
         </div>
 
         {/* Storage Usage Bar */}
@@ -1276,6 +1287,16 @@ export default function DashboardPage() {
             >
               <HelpCircle className="w-4 h-4 text-blue-500" />
             </button>
+
+            {/* Keyboard Shortcuts Navigation */}
+            <Link 
+              href="/shortcuts"
+              target="_blank"
+              className="hidden sm:flex p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer items-center justify-center"
+              title="Keyboard Shortcuts"
+            >
+              <Keyboard className="w-4 h-4 text-blue-500" />
+            </Link>
 
             {/* Theme Toggle */}
             <button 
@@ -2437,7 +2458,15 @@ export default function DashboardPage() {
               </section>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-[var(--border-color)] flex justify-end">
+            <div className="mt-6 pt-4 border-t border-[var(--border-color)] flex items-center justify-between">
+              <Link 
+                href="/shortcuts"
+                target="_blank"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-xs font-semibold text-[var(--text-sub)] hover:text-[var(--text-main)] transition-all"
+              >
+                <Keyboard className="w-4 h-4 text-blue-500" />
+                <span>Keyboard Shortcuts Docs</span>
+              </Link>
               <button 
                 onClick={() => setIsHelpOpen(false)}
                 className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all cursor-pointer shadow-md hover:shadow-blue-600/25"
