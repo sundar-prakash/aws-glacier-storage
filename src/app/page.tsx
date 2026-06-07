@@ -758,7 +758,7 @@ export default function DashboardPage() {
         </div>
 
         {/* New Button Section */}
-        <div className="p-4 flex items-center">
+        <div className="p-4 flex flex-col items-start gap-2.5 w-full">
           <div className="relative" ref={newMenuRef}>
             <button 
               onClick={() => setIsNewMenuOpen(!isNewMenuOpen)}
@@ -833,12 +833,12 @@ export default function DashboardPage() {
           />
           
           {/* Storage Tier Select */}
-          <div className="mt-3 flex items-center justify-between gap-1 p-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-xs">
+          <div className="w-full flex items-center justify-between gap-1 p-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-[11px] shrink-0">
              <button
               onClick={() => setUploadClass('GLACIER')}
-              className={`flex-1 py-1 rounded px-2 text-center transition-all ${
+              className={`flex-1 py-1.5 rounded text-center transition-all ${
                 uploadClass === 'GLACIER' 
-                  ? 'bg-blue-600 text-white font-semibold' 
+                  ? 'bg-blue-600 text-white font-semibold shadow-sm' 
                   : 'text-[var(--text-sub)] hover:text-[var(--text-main)]'
               }`}
               title="S3 Glacier Flexible Retrieval (cheapest, free Bulk or Standard retrieval)"
@@ -847,9 +847,9 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={() => setUploadClass('DEEP_ARCHIVE')}
-              className={`flex-1 py-1 rounded px-2 text-center transition-all ${
+              className={`flex-1 py-1.5 rounded text-center transition-all ${
                 uploadClass === 'DEEP_ARCHIVE' 
-                  ? 'bg-indigo-600 text-white font-semibold' 
+                  ? 'bg-indigo-600 text-white font-semibold shadow-sm' 
                   : 'text-[var(--text-sub)] hover:text-[var(--text-main)]'
               }`}
               title="S3 Glacier Deep Archive (absolute lowest cost, 12h free Bulk retrieval)"
@@ -1003,7 +1003,7 @@ export default function DashboardPage() {
 
             {/* Grid Size Control (Zoom Slider) */}
             {viewMode === 'grid' && (
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg">
+              <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg">
                 <span className="text-[10px] text-[var(--text-muted)] uppercase font-semibold">Zoom</span>
                 <input
                   type="range"
@@ -1018,7 +1018,7 @@ export default function DashboardPage() {
             )}
 
             {/* Layout Toggle */}
-            <div className="flex items-center gap-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] p-1 rounded-lg">
+            <div className="hidden sm:flex items-center gap-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] p-1 rounded-lg">
               <button 
                 onClick={() => setViewMode('list')}
                 className={`p-1.5 rounded transition-all ${
@@ -1051,7 +1051,7 @@ export default function DashboardPage() {
             {/* Help & Documentation */}
             <button 
               onClick={() => setIsHelpOpen(true)}
-              className="p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
+              className="hidden sm:block p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-sub)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] active:opacity-85 transition-all cursor-pointer"
               title="Help & Documentation"
             >
               <HelpCircle className="w-4 h-4 text-blue-500" />
@@ -1080,7 +1080,7 @@ export default function DashboardPage() {
         </header>
 
         {/* WORKSPACE AREA */}
-        <main className="flex-1 overflow-y-auto m-4 md:m-6 mt-0 p-6 md:p-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm flex flex-col min-h-0">
+        <main className="flex-1 overflow-y-auto m-2 sm:m-4 md:m-6 mt-0 p-3 sm:p-6 md:p-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm flex flex-col min-h-0">
           
           {/* Breadcrumbs Path Navigation */}
           {activeTab === 'all' && (
@@ -1170,9 +1170,9 @@ export default function DashboardPage() {
                       <tr className="border-b border-[var(--border-color)] bg-[var(--bg-card)]/60 text-xs font-semibold text-[var(--text-sub)] tracking-wider uppercase">
                         <th className="py-4 px-6 rounded-tl-xl">Name</th>
                         <th className="py-4 px-6">Status</th>
-                        <th className="py-4 px-6">Storage Class</th>
-                        <th className="py-4 px-6">Size</th>
-                        <th className="py-4 px-6">Date Modified</th>
+                        <th className="py-4 px-6 hidden md:table-cell">Storage Class</th>
+                        <th className="py-4 px-6 hidden sm:table-cell">Size</th>
+                        <th className="py-4 px-6 hidden lg:table-cell">Date Modified</th>
                         <th className="py-4 px-6 text-right rounded-tr-xl">Actions</th>
                       </tr>
                     </thead>
@@ -1255,7 +1255,7 @@ export default function DashboardPage() {
                           </td>
 
                           {/* Storage Class */}
-                          <td className="py-4 px-6 text-xs text-[var(--text-sub)] font-mono">
+                          <td className="py-4 px-6 text-xs text-[var(--text-sub)] font-mono hidden md:table-cell">
                             {file.isFolder ? (
                               <span className="text-amber-500/70 font-semibold">Folder</span>
                             ) : (
@@ -1264,12 +1264,12 @@ export default function DashboardPage() {
                           </td>
 
                           {/* Size */}
-                          <td className="py-4 px-6 text-sm text-[var(--text-main)]">
+                          <td className="py-4 px-6 text-sm text-[var(--text-main)] hidden sm:table-cell">
                             {file.isFolder ? formatBytes(getFolderSize(file.id)) : formatBytes(file.size)}
                           </td>
 
                           {/* Date Modified */}
-                          <td className="py-4 px-6 text-sm text-[var(--text-sub)]">
+                          <td className="py-4 px-6 text-sm text-[var(--text-sub)] hidden lg:table-cell">
                             {new Date(file.modifiedAt || file.uploadedAt).toLocaleDateString()}
                           </td>
 
